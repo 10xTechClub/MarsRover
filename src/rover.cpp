@@ -851,7 +851,8 @@ void initializeSystem() {
 }
 
 // ----------------- Movement helpers ----------------
-void moveForward(int spd) {
+
+void turnRight(int spd) {
   // Example differential drive with motor pins - adapt to your motor driver wiring
   analogWrite(MOTOR_ENA, spd);
   analogWrite(MOTOR_ENB, spd);
@@ -862,7 +863,7 @@ void moveForward(int spd) {
   currentMovement = FORWARD;
 }
 
-void moveBackward(int spd) {
+void turnLeft(int spd) {
   analogWrite(MOTOR_ENA, spd);
   analogWrite(MOTOR_ENB, spd);
   digitalWrite(MOTOR_IN1, HIGH);
@@ -872,7 +873,7 @@ void moveBackward(int spd) {
   currentMovement = BACKWARD;
 }
 
-void turnRight(int spd) {
+void moveForward(int spd) {
   // Turn right: left motor forward, right motor backward
   analogWrite(MOTOR_ENA, spd);
   analogWrite(MOTOR_ENB, spd);
@@ -883,7 +884,7 @@ void turnRight(int spd) {
   currentMovement = RIGHT;
 }
 
-void turnLeft(int spd) {
+void moveBackward(int spd) {
   // Turn left: left motor backward, right motor forward
   analogWrite(MOTOR_ENA, spd);
   analogWrite(MOTOR_ENB, spd);
