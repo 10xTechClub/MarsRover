@@ -31,9 +31,9 @@
 // LED Pins
 #define PIN_FRONT 16
 #define PIN_RIGHT 17
-#define PIN_LEFT 18
+#define PIN_LEFT 19
 #define PIN_BACK 21
-#define NUM_LEDS 10
+#define NUM_LEDS 13
 
 // ----------------- GLOBAL VARIABLES ----------------
 const char *ssid = "10xTC-AP2";         // <- update if needed
@@ -156,6 +156,11 @@ void moveBackward(int spd = slowSpeed);
 void turnLeft(int spd = turnSpeed);
 void turnRight(int spd = turnSpeed);
 void stopMotors();
+bool checkAndHandleAlerts();
+void animateSideStripsForward();
+void animateSideStripsBackward();
+void animateRightStripBackward();
+void animateLeftStripBackward();
 
 void wsEvent(AsyncWebSocket *serverWS, AsyncWebSocketClient *client, AwsEventType type,
              void *arg, uint8_t *data, size_t len);
@@ -204,6 +209,7 @@ void loop() {
   if (now - lastSensorUpdate >= SENSOR_INTERVAL) {
     lastSensorUpdate = now;
     updateOtherSensors();
+    checkAndHandleAlerts();
     if (hasActiveClients) {
       sendFullData();
     }
@@ -532,7 +538,7 @@ void sendFullData() {
   if (distance < 30) alerts.add("⚠️ Obstacle too close!");
   if (sensors.temp > 30) alerts.add("🌡️ High temperature detected!");
   if (sensors.humidity > 80) alerts.add("💧 High humidity detected!");
-  if (sensors.light < 25) alerts.add("🌑 Low light level!");
+  if (sensors.light < 60) alerts.add("🌑 Low light level!");
   if (sensors.gas > 600) alerts.add("☠️ Gas level dangerous!");
   if (sensors.hall > 72) alerts.add("🧲 Strong magnetic field detected!");
   
@@ -596,47 +602,83 @@ void updateOtherSensors() {
 
 // ----------------- LED helpers ----------------
 void setLEDs(MovementState state) {
-  static MovementState lastState = STOP;
-  if (state == lastState) return;
+  // First check for alerts - if any alert is active, override all LEDs to red
+  static bool lastAlertState = false;
+  bool currentAlertActive = (distance < 30) || (sensors.temp > 30) || 
+                           (sensors.humidity > 80) || (sensors.light < 60) || 
+                           (sensors.gas > 600) || (sensors.hall > 72);
   
-  clearAllLEDs();
+  if (currentAlertActive) {
+    if (!lastAlertState) {  // Alert just triggered
+      setStripColor(frontStrip, RED_COLOR);
+      setStripColor(backStrip, RED_COLOR);
+      setStripColor(leftStrip, RED_COLOR);
+      setStripColor(rightStrip, RED_COLOR);
+      showAllLEDs();
+    }
+    lastAlertState = true;
+    return;  // Don't process movement LEDs while alert is active
+  }
   
+  // Alert cleared, resume normal LED patterns
+  if (lastAlertState && !currentAlertActive) {
+    clearAllLEDs();  // Clear red alert LEDs
+  }
+  lastAlertState = false;
+  
+  // Normal movement LED patterns
   switch (state) {
     case FORWARD:
       setStripColor(frontStrip, WHITE_COLOR);
       setStripColor(backStrip, RED_COLOR);
-      setStripColor(leftStrip, TEAL_COLOR);
-      setStripColor(rightStrip, TEAL_COLOR);
+      animateSideStripsForward();  // Animated sky blue front to back
       break;
+      
     case BACKWARD:
       setStripColor(frontStrip, RED_COLOR);
       setStripColor(backStrip, WHITE_COLOR);
-      setStripColor(leftStrip, TEAL_COLOR);
-      setStripColor(rightStrip, TEAL_COLOR);
+      animateSideStripsBackward();  // Animated sky blue back to front
       break;
+      
     case LEFT:
       setStripColor(frontStrip, WHITE_COLOR);
+      setStripColor(leftStrip, TEAL_COLOR);  // Steady sky blue
       setStripColor(backStrip, RED_COLOR);
-      setStripColor(leftStrip, WHITE_COLOR);
-      setStripColor(rightStrip, RED_COLOR);
+      animateRightStripBackward();  // Right side animated back to front
       break;
+      
     case RIGHT:
       setStripColor(frontStrip, WHITE_COLOR);
+      setStripColor(rightStrip, TEAL_COLOR);  // Steady sky blue
       setStripColor(backStrip, RED_COLOR);
-      setStripColor(leftStrip, RED_COLOR);
-      setStripColor(rightStrip, WHITE_COLOR);
+      animateLeftStripBackward();  // Left side animated back to front
       break;
+      
     case STOP:
     default:
-      setStripColor(frontStrip, adjustBrightness(WHITE_COLOR, 127));
-      setStripColor(backStrip, adjustBrightness(RED_COLOR, 127));
-      setStripColor(leftStrip, adjustBrightness(TEAL_COLOR, 127));
-      setStripColor(rightStrip, adjustBrightness(TEAL_COLOR, 127));
+      setStripColor(frontStrip, WHITE_COLOR);
+      setStripColor(leftStrip, TEAL_COLOR);
+      setStripColor(rightStrip, TEAL_COLOR);
+      setStripColor(backStrip, RED_COLOR);
+      showAllLEDs();
       break;
   }
   
-  showAllLEDs();
-  lastState = state;
+  // Show non-animated strips (animated ones show themselves)
+  if (state == STOP) {
+    showAllLEDs();
+  } else if (state == LEFT) {
+    frontStrip.show();
+    leftStrip.show();
+    backStrip.show();
+  } else if (state == RIGHT) {
+    frontStrip.show();
+    rightStrip.show();
+    backStrip.show();
+  } else if (state == FORWARD || state == BACKWARD) {
+    frontStrip.show();
+    backStrip.show();
+  }
 }
 
 void setStripColor(Adafruit_NeoPixel& strip, uint32_t color) {
@@ -812,6 +854,17 @@ void initializeSystem() {
     Serial.println("LittleFS mounted");
   }
 
+    // Static IP setup (add this before WiFi.begin)
+  IPAddress local_IP(192, 168, 0, 120);
+  IPAddress gateway(192, 168, 0, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  IPAddress primaryDNS(8, 8, 8, 8);
+  IPAddress secondaryDNS(8, 8, 4, 4);
+ 
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+    Serial.println("STA Failed to configure");
+  }
+
   // WiFi
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -860,7 +913,7 @@ void turnRight(int spd) {
   digitalWrite(MOTOR_IN2, HIGH);
   digitalWrite(MOTOR_IN3, HIGH);
   digitalWrite(MOTOR_IN4, LOW);
-  currentMovement = FORWARD;
+  currentMovement = RIGHT;
 }
 
 void turnLeft(int spd) {
@@ -870,7 +923,7 @@ void turnLeft(int spd) {
   digitalWrite(MOTOR_IN2, LOW);
   digitalWrite(MOTOR_IN3, LOW);
   digitalWrite(MOTOR_IN4, HIGH);
-  currentMovement = BACKWARD;
+  currentMovement = LEFT;
 }
 
 void moveForward(int spd) {
@@ -881,7 +934,7 @@ void moveForward(int spd) {
   digitalWrite(MOTOR_IN2, HIGH);
   digitalWrite(MOTOR_IN3, LOW);
   digitalWrite(MOTOR_IN4, HIGH);
-  currentMovement = RIGHT;
+  currentMovement = FORWARD;
 }
 
 void moveBackward(int spd) {
@@ -892,7 +945,7 @@ void moveBackward(int spd) {
   digitalWrite(MOTOR_IN2, LOW);
   digitalWrite(MOTOR_IN3, HIGH);
   digitalWrite(MOTOR_IN4, LOW);
-  currentMovement = LEFT;
+  currentMovement = BACKWARD;
 }
 
 void stopMotors() {
@@ -917,5 +970,99 @@ void smoothServoMove(Servo &servo, int target, int stepDelay) {
       servo.write(pos);
       delay(stepDelay);
     }
+  }
+}
+
+
+bool checkAndHandleAlerts() {
+  bool alertTriggered = false;
+
+  if (distance < 30) alertTriggered = true;
+  if (sensors.temp > 30) alertTriggered = true;
+  if (sensors.humidity > 80) alertTriggered = true;
+  if (sensors.light < 60) alertTriggered = true;
+  if (sensors.gas > 600) alertTriggered = true;
+  if (sensors.hall > 72) alertTriggered = true;
+
+  // Don't call setAlertLED here - let setLEDs handle it
+  return alertTriggered;
+}
+
+void animateSideStripsForward() {
+  // Clear side strips first
+  leftStrip.clear();
+  rightStrip.clear();
+  
+  // Animate both sides front to back
+  static int pos = 0;
+  static unsigned long lastUpdate = 0;
+  
+  if (millis() - lastUpdate > 100) {  // Update every 100ms
+    for(int i = 0; i < NUM_LEDS; i++) {
+      if (i == pos) {
+        leftStrip.setPixelColor(i, TEAL_COLOR);
+        rightStrip.setPixelColor(i, TEAL_COLOR);
+      }
+    }
+    leftStrip.show();
+    rightStrip.show();
+    
+    pos = (pos + 1) % NUM_LEDS;
+    lastUpdate = millis();
+  }
+}
+
+void animateSideStripsBackward() {
+  // Clear side strips first
+  leftStrip.clear();
+  rightStrip.clear();
+  
+  // Animate both sides back to front
+  static int pos = NUM_LEDS - 1;
+  static unsigned long lastUpdate = 0;
+  
+  if (millis() - lastUpdate > 100) {
+    for(int i = 0; i < NUM_LEDS; i++) {
+      if (i == pos) {
+        leftStrip.setPixelColor(i, TEAL_COLOR);
+        rightStrip.setPixelColor(i, TEAL_COLOR);
+      }
+    }
+    leftStrip.show();
+    rightStrip.show();
+    
+    pos--;
+    if (pos < 0) pos = NUM_LEDS - 1;
+    lastUpdate = millis();
+  }
+}
+
+void animateRightStripBackward() {
+  rightStrip.clear();
+  static int pos = NUM_LEDS - 1;
+  static unsigned long lastUpdate = 0;
+  
+  if (millis() - lastUpdate > 100) {
+    rightStrip.setPixelColor(pos, TEAL_COLOR);
+    rightStrip.show();
+    
+    pos--;
+    if (pos < 0) pos = NUM_LEDS - 1;
+    lastUpdate = millis();
+  }
+}
+
+void animateLeftStripBackward() {
+  leftStrip.clear();
+  static int pos = NUM_LEDS - 1;
+  static unsigned long lastUpdate = 0;
+  
+  if (millis() - lastUpdate > 100) {
+    leftStrip.setPixelColor(pos, TEAL_COLOR);
+    leftStrip.show();
+    
+    pos--;
+    if (pos < 0) pos = NUM_LEDS - 1;
+    lastUpdate = millis();
   }
 }
