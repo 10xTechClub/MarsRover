@@ -53,6 +53,7 @@ Adafruit_NeoPixel backStrip(NUM_LEDS, PIN_BACK, NEO_GRB + NEO_KHZ800);
 #define TEAL_COLOR 0x00FFBF
 #define WHITE_COLOR 0xFFFFFF
 #define RED_COLOR 0xFF0000
+#define GREEN_COLOR 0x00FF00
 
 // Control & Navigation
 enum ControlMode { MANUAL, AUTONOMOUS };
@@ -538,7 +539,7 @@ void sendFullData() {
   if (distance < 30) alerts.add("⚠️ Obstacle too close!");
   if (sensors.temp > 30) alerts.add("🌡️ High temperature detected!");
   if (sensors.humidity > 80) alerts.add("💧 High humidity detected!");
-  if (sensors.light < 60) alerts.add("🌑 Low light level!");
+  if (sensors.light < 10) alerts.add("🌑 Low light level!");
   if (sensors.gas > 600) alerts.add("☠️ Gas level dangerous!");
   if (sensors.hall > 72) alerts.add("🧲 Strong magnetic field detected!");
   
@@ -605,7 +606,7 @@ void setLEDs(MovementState state) {
   // First check for alerts - if any alert is active, override all LEDs to red
   static bool lastAlertState = false;
   bool currentAlertActive = (distance < 30) || (sensors.temp > 30) || 
-                           (sensors.humidity > 80) || (sensors.light < 60) || 
+                           (sensors.humidity > 80) || (sensors.light < 10) || 
                            (sensors.gas > 600) || (sensors.hall > 72);
   
   if (currentAlertActive) {
@@ -855,7 +856,7 @@ void initializeSystem() {
   }
 
     // Static IP setup (add this before WiFi.begin)
-  IPAddress local_IP(192, 168, 0, 120);
+  IPAddress local_IP(192, 168, 0, 139);
   IPAddress gateway(192, 168, 0, 1);
   IPAddress subnet(255, 255, 255, 0);
   IPAddress primaryDNS(8, 8, 8, 8);
@@ -980,7 +981,7 @@ bool checkAndHandleAlerts() {
   if (distance < 30) alertTriggered = true;
   if (sensors.temp > 30) alertTriggered = true;
   if (sensors.humidity > 80) alertTriggered = true;
-  if (sensors.light < 60) alertTriggered = true;
+  if (sensors.light < 10) alertTriggered = true;
   if (sensors.gas > 600) alertTriggered = true;
   if (sensors.hall > 72) alertTriggered = true;
 
